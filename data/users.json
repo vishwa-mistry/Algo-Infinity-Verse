@@ -526,5 +526,14 @@
     "level": 1,
     "avatar": "🚀",
     "activityData": {}
+  },
+  {
+    "id": "guest-87a596b4-78a2-4a93-acf8-43ee3a461870",
+    "email": "guest-87a596b4-78a2-4a93-acf8-43ee3a461870@local",
+    "name": "Guest",
+    "xp": 0,
+    "level": 1,
+    "avatar": "🚀",
+    "activityData": {}
   }
 ]

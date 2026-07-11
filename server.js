@@ -88,6 +88,8 @@ import {
   submitSolution,
   getBattle,
   getHistory,
+  TEST_CASES,
+  runTestCases,
 } from './pages/Dsa-Battle/Battleservice.js';
 
 import { instrumentJS } from './modules/code-tracer.js';
@@ -3536,6 +3538,10 @@ function getSummary(score) {
 // --- PHASE 1 ADDITION: SOCKET.IO LOGIC ---
 const io = new SocketIOServer(server);
 
+// --- BATTLE MODE STATE ---
+const matchmakingQueue = { Easy: [], Medium: [], Hard: [] };
+const activeBattles = new Map();
+
 function serializeRoom(room) {
   return {
     id: room.id,
@@ -3807,6 +3813,99 @@ io.on('connection', (socket) => {
     });
     if (!valid) return;
     socket.to(`battle_${valid.battleId}`).emit('battle-progress-update', valid);
+  });
+
+  // ── IN-MEMORY MATCHMAKING LOGIC ──
+  socket.on('find-match', (data) => {
+    const valid = validateSocketInput(data, {
+      userId: { type: 'string', required: true },
+      userName: { type: 'string', required: true },
+      difficulty: { type: 'string', required: true },
+    });
+    if (!valid) return;
+
+    const diff = valid.difficulty;
+    if (!matchmakingQueue[diff]) matchmakingQueue[diff] = [];
+    
+    // Check if someone is already waiting
+    const queue = matchmakingQueue[diff];
+    const opponentIdx = queue.findIndex(u => u.userId !== valid.userId);
+    
+    if (opponentIdx !== -1) {
+      // Match found!
+      const opponent = queue.splice(opponentIdx, 1)[0];
+      const battleId = crypto.randomUUID();
+      
+      const problemKeys = Object.keys(TEST_CASES);
+      const chosenTitle = problemKeys[Math.floor(Math.random() * problemKeys.length)];
+      const problem = TEST_CASES[chosenTitle];
+
+      const battleData = {
+        id: battleId,
+        difficulty: diff,
+        status: 'active',
+        problemTitle: chosenTitle,
+        problemDescription: `Implement ${problem.func}. Test cases await.`,
+        participants: {
+          [valid.userId]: { name: valid.userName, progress: 0, status: 'active' },
+          [opponent.userId]: { name: opponent.userName, progress: 0, status: 'active' }
+        },
+        winner: null
+      };
+
+      activeBattles.set(battleId, battleData);
+
+      // Join both to the socket room
+      socket.join(`battle_${battleId}`);
+      const opponentSocket = io.sockets.sockets.get(opponent.socketId);
+      if (opponentSocket) opponentSocket.join(`battle_${battleId}`);
+
+      // Emit match-found to both
+      io.to(`battle_${battleId}`).emit('match-found', {
+        battleId,
+        battleData,
+        opponentName: { [valid.userId]: opponent.userName, [opponent.userId]: valid.userName }
+      });
+    } else {
+      // Add to queue
+      // Remove existing entries for this user first
+      matchmakingQueue[diff] = queue.filter(u => u.userId !== valid.userId);
+      matchmakingQueue[diff].push({
+        userId: valid.userId,
+        userName: valid.userName,
+        socketId: socket.id
+      });
+    }
+  });
+
+  socket.on('battle-submit', (data) => {
+    const valid = validateSocketInput(data, {
+      battleId: { type: 'string', required: true },
+      userId: { type: 'string', required: true },
+      code: { type: 'string', required: true },
+    });
+    if (!valid) return;
+
+    const battle = activeBattles.get(valid.battleId);
+    if (!battle || battle.status !== 'active') {
+      socket.emit('battle-submit-result', { error: 'Battle not active.' });
+      return;
+    }
+
+    const passed = runTestCases(battle.problemTitle, valid.code);
+    
+    if (passed) {
+      battle.status = 'completed';
+      battle.winner = valid.userId;
+      io.to(`battle_${valid.battleId}`).emit('battle-over', {
+        winnerId: valid.userId,
+        winnerName: battle.participants[valid.userId].name,
+        badge: "Speed Demon",
+        xpAwarded: 100 // Mock XP
+      });
+    } else {
+      socket.emit('battle-submit-result', { success: false, message: 'Tests failed. Keep trying!' });
+    }
   });
 
   // ── ESCAPE ROOM MODE ──
