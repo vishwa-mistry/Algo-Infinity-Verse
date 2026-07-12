@@ -36,8 +36,9 @@ export const TEST_CASES = {
 
 export function runTestCases(title, code) {
   const problem = TEST_CASES[title];
-  if (!problem) return true; // fallback if no test cases
-
+  if (!problem) {
+    throw new Error(`Unsupported battle problem: ${title}`);
+  }
   const sandbox = { console, result: null };
   const context = vm.createContext(sandbox);
 
