@@ -163,8 +163,9 @@ function initSocket() {
     
     socket.on("battle-submit-result", (data) => {
       if (!data.success) {
-        submitStatusMsg.style.color = "#ef4444";
-        submitStatusMsg.textContent = data.message;
+        submitStatusMsg.style.color = "`#ef4444`";
+        submitStatusMsg.textContent =
+          data.message || data.error || "Submission failed.";
         submitSolutionBtn.disabled = false;
         submitSolutionBtn.textContent = "Submit Solution";
       }
